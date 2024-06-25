@@ -50,7 +50,7 @@ async def on_voice(message: Message, state: FSMContext) -> None:
         thread_id=thread.id,
         assistant_id=assistant_id,
     )
-    if run.status is not 'completed':
+    if run.status != 'completed':
         await message.answer("Something went wrong. Please try again.")
         os.remove(str(voice.file_id) + '.mp3')
         return
