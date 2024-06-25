@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import sys
-from os import getenv
 
 from openai import AsyncOpenAI
 
@@ -11,9 +10,12 @@ from aiogram.enums import ParseMode
 from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 
-client = AsyncOpenAI()
+from config import settings
 
-bot = Bot(token=getenv('TOKEN'), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+bot = Bot(token=settings.TOKEN,
+          default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 router = Router(name=__name__)
 dp = Dispatcher()
 dp.include_router(router)
@@ -65,7 +67,28 @@ async def on_voice(message: Message, state: FSMContext) -> None:
 
 async def main() -> None:
     global assistant
-    assistant = await client.beta.assistants.create(model="gpt-4o")
+    assistant = await client.beta.assistants.create(
+        model="gpt-4o",
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "save_value",
+                    "description": "Save the user's key value.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "value": {
+                                "type": "string",
+                                "description": "The user's key value."
+                            }
+                        },
+                        "required": ["value"]
+                    }
+                }
+            }
+        ]
+    )
     await dp.start_polling(bot)
 
 
