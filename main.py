@@ -41,7 +41,7 @@ async def on_voice(message: Message, state: FSMContext) -> None:
         thread = data['thread']
     else:
         thread = await client.beta.threads.create()
-    msg = await client.beta.threads.messages.create(
+    await client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
         content=transcription.text,
@@ -50,6 +50,10 @@ async def on_voice(message: Message, state: FSMContext) -> None:
         thread_id=thread.id,
         assistant_id=assistant_id,
     )
+    if run.status is not 'completed':
+        await message.answer("Something went wrong. Please try again.")
+        os.remove(str(voice.file_id) + '.mp3')
+        return
     messages = await client.beta.threads.messages.list(
         thread_id=thread.id
     )
