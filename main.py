@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+import os
 
 from openai import AsyncOpenAI
 
@@ -16,6 +17,9 @@ client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 bot = Bot(token=settings.TOKEN,
           default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
+assistant_id = settings.ASSISTANT_ID
+
 router = Router(name=__name__)
 dp = Dispatcher()
 dp.include_router(router)
@@ -44,7 +48,7 @@ async def on_voice(message: Message, state: FSMContext) -> None:
     )
     run = await client.beta.threads.runs.create_and_poll(
         thread_id=thread.id,
-        assistant_id=assistant.id,
+        assistant_id=assistant_id,
     )
     messages = await client.beta.threads.messages.list(
         thread_id=thread.id
@@ -63,32 +67,10 @@ async def on_voice(message: Message, state: FSMContext) -> None:
         audio_file.write(audio_response.read())
     audio_file = FSInputFile(str(voice.file_id) + '.mp3')
     await message.answer_voice(voice=audio_file)
+    os.remove(str(voice.file_id) + '.mp3')
 
 
 async def main() -> None:
-    global assistant
-    assistant = await client.beta.assistants.create(
-        model="gpt-4o",
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "save_value",
-                    "description": "Save the user's key value.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "value": {
-                                "type": "string",
-                                "description": "The user's key value."
-                            }
-                        },
-                        "required": ["value"]
-                    }
-                }
-            }
-        ]
-    )
     await dp.start_polling(bot)
 
 
