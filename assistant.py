@@ -6,6 +6,8 @@ client = OpenAI(api_key=Settings().OPENAI_API_KEY)
 
 assistant = client.beta.assistants.create(
         model="gpt-4o",
+        instructions="You are personal assistant. User can send you a picture of his face."
+                     "In this case you should analyse it's mood and answer correspondingly.",
         tools=[
             {
                 "type": "function",
