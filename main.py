@@ -6,8 +6,6 @@ import base64
 
 from uuid import uuid4
 
-from openai import AsyncOpenAI
-
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -15,14 +13,15 @@ from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 
 from environment import Settings
-from values import save_value
+from database.values import save_value
 
 from amplitude import Amplitude, BaseEvent
 from concurrency import executor
 
-amplitude_client = Amplitude(api_key=Settings().AMPLITUDE_API_KEY)
+from llm.client import client
+from llm.filework import setup_filework
 
-client = AsyncOpenAI(api_key=Settings().OPENAI_API_KEY)
+amplitude_client = Amplitude(api_key=Settings().AMPLITUDE_API_KEY)
 
 bot = Bot(token=Settings().TOKEN,
           default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -41,6 +40,20 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
+async def download_voice_as_text(voice) -> str:
+    filepath = str(uuid4()) + ".mp3"
+    await bot.download(voice, filepath)
+    audio_file = open(filepath, 'rb')
+    transcription = await client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file
+    )
+    audio_file.close()
+    os.remove(filepath)
+    print(transcription)
+    return transcription.text
+
+
 async def send_audio(text: str, chat_id: int):
     filename = str(uuid4())
     audio_response = await client.audio.speech.create(
@@ -56,33 +69,44 @@ async def send_audio(text: str, chat_id: int):
     os.remove(filename + '.mp3')
 
 
+async def find_citations(message_content) -> str | None:
+    annotations = message_content.annotations
+    citations = []
+    for annotation in annotations:
+        message_content.value = message_content.value.replace(annotation.text, "")
+        if file_citation := getattr(annotation, "file_citation", None):
+            cited_file = await client.files.retrieve(file_citation.file_id)
+            citations.append(cited_file.filename)
+    if citations:
+        return citations[0]
+
+
+async def get_thread_id(state: FSMContext) -> int:
+    data = await state.get_data()
+    if 'thread_id' in data:
+        return data['thread_id']
+    thread = await client.beta.threads.create()
+    await state.update_data(thread_id=thread.id)
+    return thread.id
+
+
 @router.message(F.voice)
 async def on_voice(message: Message, state: FSMContext) -> None:
     event = BaseEvent(event_type="Send voice", user_id=str(message.from_user.id))
     executor.submit(amplitude_client.track, event)
 
-    voice = message.voice
-    await bot.download(voice, str(voice.file_id) + '.mp3')
-    audio_file = open(str(voice.file_id) + '.mp3', 'rb')
-    transcription = await client.audio.transcriptions.create(
-        model="whisper-1",
-        file=audio_file
-    )
-    audio_file.close()
-    print(transcription)
+    thread_id = await get_thread_id(state)
 
-    data = await state.get_data()
-    if 'thread' in data:
-        thread = data['thread']
-    else:
-        thread = await client.beta.threads.create()
+    transcription = await download_voice_as_text(voice=message.voice)
+
     await client.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="user",
-        content=transcription.text,
+        content=transcription,
     )
+
     run = await client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id,
+        thread_id=thread_id,
         assistant_id=assistant_id,
     )
     if run.status == 'requires_action':
@@ -93,7 +117,7 @@ async def on_voice(message: Message, state: FSMContext) -> None:
             tasks.append(save_value(user=message.chat.id, value=value))
             tool_outputs.append({'tool_call_id': tool.id, 'output': ""})
         run_coroutine = client.beta.threads.runs.submit_tool_outputs_and_poll(
-            thread_id=thread.id,
+            thread_id=thread_id,
             run_id=run.id,
             tool_outputs=tool_outputs,
         )
@@ -101,17 +125,21 @@ async def on_voice(message: Message, state: FSMContext) -> None:
         run = results[0]
     if run.status != 'completed':
         await message.answer("Something went wrong. Please try again.")
-        os.remove(str(voice.file_id) + '.mp3')
         return
+
     messages = await client.beta.threads.messages.list(
-        thread_id=thread.id
+        thread_id=thread_id,
     )
-    response = messages.data[0].content[0].text.value
+    response = messages.data[0].content[0].text
 
-    print("response="+response)
-    await send_audio(text=response, chat_id=message.chat.id)
+    print("response="+response.value)
 
-    await state.update_data(thread=thread)
+    cited_file_name = await find_citations(message_content=response)
+
+    await send_audio(text=response.value, chat_id=message.chat.id)
+
+    if cited_file_name:
+        await message.answer(text=f"Source: {cited_file_name}")
 
 
 async def process_image(base64_image) -> str:
@@ -143,11 +171,7 @@ async def on_photo(message: Message, state: FSMContext) -> None:
     event = BaseEvent(event_type="Send photo", user_id=str(message.from_user.id))
     executor.submit(amplitude_client.track, event)
 
-    data = await state.get_data()
-    if 'thread' in data:
-        thread = data['thread']
-    else:
-        thread = await client.beta.threads.create()
+    thread_id = await get_thread_id(state)
 
     photo = message.photo[0]
     file = await bot.get_file(photo.file_id)
@@ -159,13 +183,13 @@ async def on_photo(message: Message, state: FSMContext) -> None:
     answer = await process_image(base64_image)
 
     await client.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="user",
         content="Here is my photo",
     )
 
     await client.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="assistant",
         content=answer
     )
@@ -173,10 +197,9 @@ async def on_photo(message: Message, state: FSMContext) -> None:
     print("response=" + answer)
     await send_audio(text=answer, chat_id=message.chat.id)
 
-    await state.update_data(thread=thread)
-
 
 async def main() -> None:
+    await setup_filework()
     await dp.start_polling(bot)
 
 

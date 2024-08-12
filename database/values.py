@@ -3,7 +3,7 @@ from sqlalchemy import insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from environment import Settings
-from validation import validate
+from database.validation import validate
 
 
 class Base(AsyncAttrs, DeclarativeBase):

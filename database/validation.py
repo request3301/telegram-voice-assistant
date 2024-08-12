@@ -1,9 +1,7 @@
 import json
 
-from openai import AsyncOpenAI
-from environment import Settings
+from llm.client import client
 
-client = AsyncOpenAI(api_key=Settings().OPENAI_API_KEY)
 
 tools = [
     {
