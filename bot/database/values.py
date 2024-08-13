@@ -1,9 +1,9 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncAttrs, AsyncSession
 from sqlalchemy import insert
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncAttrs, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from environment import Settings
 from database.validation import validate
+from environment import Settings
 
 
 class Base(AsyncAttrs, DeclarativeBase):

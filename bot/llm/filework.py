@@ -1,5 +1,5 @@
-from llm.client import client
 from environment import Settings
+from llm.client import client
 
 
 async def setup_filework():
@@ -7,7 +7,7 @@ async def setup_filework():
     vector_store = await client.beta.vector_stores.create(name="Anxiety Essay")
 
     # Ready the files for upload to OpenAI
-    file_paths = ["llm/files/Anxiety Essay.docx"]
+    file_paths = ["bot/llm/files/Anxiety Essay.docx"]
     file_streams = [open(path, "rb") for path in file_paths]
 
     # Use the upload and poll SDK helper to upload the files, add them to the vector store,

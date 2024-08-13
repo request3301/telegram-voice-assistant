@@ -2,7 +2,6 @@ import json
 
 from llm.client import client
 
-
 tools = [
     {
         "type": "function",
@@ -40,11 +39,11 @@ tool_choice = {"type": "function", "function": {"name": "write_to_database"}}
 async def validate(value: str) -> bool:
     messages = [{"role": "user", "content": value}]
     chat_response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
+        model="gpt-4o",
+        messages=messages,
+        tools=tools,
+        tool_choice=tool_choice,
+    )
     response_message = chat_response.choices[0].message
     tool_calls = response_message.tool_calls
     valid = json.loads(tool_calls[0].function.arguments)['valid']

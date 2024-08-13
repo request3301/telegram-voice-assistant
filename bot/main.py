@@ -1,25 +1,28 @@
 import asyncio
-import logging
-import sys
-import os
 import base64
-
+import logging
+import os
+import sys
 from uuid import uuid4
 
+import redis.asyncio as redis
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
-
-from environment import Settings
-from database.values import save_value
-
+from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import Message, FSInputFile
 from amplitude import Amplitude, BaseEvent
-from concurrency import executor
 
+from concurrency import executor
+from database.values import save_value
+from environment import Settings
 from llm.client import client
 from llm.filework import setup_filework
+
+pool = redis.ConnectionPool.from_url("redis://redis:6379")
+redis_client = redis.Redis.from_pool(pool)
+redis_storage = RedisStorage(redis_client)
 
 amplitude_client = Amplitude(api_key=Settings().AMPLITUDE_API_KEY)
 
@@ -29,7 +32,7 @@ bot = Bot(token=Settings().TOKEN,
 assistant_id = Settings().ASSISTANT_ID
 
 router = Router(name=__name__)
-dp = Dispatcher()
+dp = Dispatcher(storage=redis_storage)
 dp.include_router(router)
 
 counter = 0
@@ -132,7 +135,7 @@ async def on_voice(message: Message, state: FSMContext) -> None:
     )
     response = messages.data[0].content[0].text
 
-    print("response="+response.value)
+    print("response=" + response.value)
 
     cited_file_name = await find_citations(message_content=response)
 
